@@ -216,7 +216,6 @@ def get_all_files(diretoriaSearch):
 			#print check
 			print "directoria_actual_get_all_files:"+'\n' , directoria_actual
 			if not (os.path.isfile(check)):
-				print "PIÇAS"
 				lista_de_filmes.append(f)
 	#print 'Diretorias:', diretorias
 	return lista_de_filmes
