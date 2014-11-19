@@ -1,0 +1,2 @@
+Linguagens disponiveis para download:
+en,es,fr,it,nl,pl,pt,ro,sv,tr
