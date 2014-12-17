@@ -2,7 +2,7 @@ Opensubtitles -Legendas Automáticas
 =========
 >Programa que dada uma diretoria e uma linguagem , verirfica todos os ficheiros de vídeo sem legenda nessa diretoria e restantes hierarquicamente abaixo, e obtém a legenda para os mesmos , tal como uma página html com uma breve informação acerca do filme/série ,a sua foto,bem como o link para o imdb.
 
-Programa testado em:
+####Programa testado em:
 
   - Linux Mint 64 Bits
   - Linux Mint 32 Bits
@@ -12,7 +12,7 @@ Programa testado em:
 
 
 
-* [OpenSubtitles] - Api fornecida pelo famoso site de legendas fornecida para desenvolvedores
+* [OpenSubtitles] - Api do famoso site de legendas fornecida para desenvolvedores
 * [Imdb] - Serviço Web grátis para obter informações sobre filmes/séries
 
 ### Requisitos para funcionar:
