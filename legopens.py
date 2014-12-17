@@ -112,6 +112,7 @@ def get_all_files(DiretoriaToSearch):
 	folder = os.listdir(DiretoriaToSearch)
 	files = []
 	movie_list = []
+	os.chdir(DiretoriaToSearch)
 	for file in folder:
 		# se for uma pasta cria um tuplo (diretoria + nome pasta)
 		if (os.path.isdir(file) and file and file != ".git"):
@@ -520,7 +521,6 @@ def main(argv):
 		x = get_all_files(my_path)
 		print "Pasta base lista filmes sem legenda:",x
 		createArraySubtitlesId(x,linguagem,my_path)
-		#print "array",novo
 		do_recursive_downloads()
 
 
