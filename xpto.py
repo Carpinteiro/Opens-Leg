@@ -32,6 +32,7 @@ import gzip
 import unicodedata
 import json
 from time import sleep
+import re
 
 class Test(object):
 	username = 'doctest'
@@ -39,7 +40,7 @@ class Test(object):
 
 config = {}
 diretorias = []
-diretorias_down = []
+folders_down = []
 lista_de_extensoes = []
 
 #login em opensubtitles, devolve o token deles
@@ -48,13 +49,11 @@ def first():
 	assert token == None
 	token = opens.login(Test.username, Test.password)
 	assert type(token) == str
-	print "Token:\n" + token
 
 #ler o mypath do config
 def getMyPath():
 	with open('config.json') as handle:
 		config.update(json.load(handle))
-		#print config["diretoria"]
 		my_path = config['diretoria']
 		return my_path
 
@@ -62,7 +61,6 @@ def getMyPath():
 def read_languages():
 	with open('config.json') as handle:
 		config.update(json.load(handle))
-		#print config["diretoria"]
 		Language = config['linguagens']
 		return Language
 
@@ -103,55 +101,48 @@ def hashFile(name):
 
 	except(IOError):
 		return "IOError"
-
+#obter o tamanho do ficheiro para o request ao opensubtitles
 def videoSize(name):
-	a = os.getcwd()
-	print "ONDE TOU getting videoSize:",a 
+	a = os.getcwd() 
 	size = os.path.getsize(name)
 	return size
 
 # dada uma diretoria : se encontra pastas cria o tuplo. Se encontra ficheiros verifica se tem legenda ou nao
 def get_all_files(DiretoriaToSearch):
-	diretoria = os.listdir(DiretoriaToSearch)
-	ficheiros = []
-	lista_de_filmes = []
-	for file in diretoria:
+	folder = os.listdir(DiretoriaToSearch)
+	files = []
+	movie_list = []
+	for file in folder:
 		# se for uma pasta cria um tuplo (diretoria + nome pasta)
-		if (os.path.isdir(file) and file != "Series" and file != ".git"):
+		if (os.path.isdir(file) and file and file != ".git"):
 			tuplo = (DiretoriaToSearch,file)
-			#print "vou adicionar este tuplo a lista das diretorias down",tuplo
-			diretorias_down.append(tuplo)
+			folders_down.append(tuplo)
 		#se for um ficheiro
 		else:
-			ficheiros.append(file)
+			files.append(file)
 
-	for f in ficheiros:
+	for f in files:
 		ext = f.split(".")
 		#sem_ext e a extensao
 		sem_ext = ext.pop(len(ext) - 1)
 		#nf e o nome do ficheiro sem extensao
 		nf = f[:-4]
-		#print sem_ext
 		if (sem_ext == 'mkv' or sem_ext == 'mp4' or sem_ext == 'avi'):
 			check = nf + '.srt'
 			os.chdir(DiretoriaToSearch)
 			if not (os.path.isfile(check)):
 				print "Não existe legenda para : ", nf
-				lista_de_filmes.append(f)
-	#print 'Diretorias a sair do get all files :', diretorias_down
-	return lista_de_filmes
-	
+				movie_list.append(f)
+	return movie_list
+#Efetuar download para pastas existentes nos niveis abaixo -> folders_down	
 def do_recursive_downloads():
 	language = read_languages()
-	#print "\nDiretorias inicias para checkar:",diretorias_down
-	while len(diretorias_down) != 0:
-		#print "Tamanho da Lista",len(diretorias_down)
-		for tuplo in diretorias_down:
+	while len(folders_down) != 0:
+		for tuplo in folders_down:
 			n = 0
 			diretoria = tuplo[n]
 			nome_pasta = tuplo[n+1]
 			together = diretoria + '/' + nome_pasta
-			#print "Together:",together
 			os.chdir(together)
 			y = get_all_files(together)
 			
@@ -159,51 +150,100 @@ def do_recursive_downloads():
 				print "\nLista de filmes sem legenda na pasta:"+together
 				print y
 				createArraySubtitlesId(y,language,together)
-				diretorias_down.remove(tuplo)
-				#print "Depois de removido com ficheiros para sacar legenda:",diretorias_down
+				folders_down.remove(tuplo)
 			else:
-				diretorias_down.remove(tuplo)
-				#print "Depois de removido sem ficheiros para sacar legenda:",diretorias_down
-				
-			#print "Ciclo Das diretorias :",diretorias_down
+				folders_down.remove(tuplo)
 				
 				
-#metodo que vai para cada ficheiro sem legenda apanhar o ID da mesma, fazer o download , e descodificar e organizar por pasta
+#metodo que vai para cada ficheiro sem legenda apanhar o ID da mesma, fazer o download , e descodificar e organizar por pasta(chama o download e o manage)
 def createArraySubtitlesId(filesWithNoLegend,LanguageChoosen,diretoria_Actual):
 	array = []
 	for file in filesWithNoLegend:
 		if type(file).__name__ == 'unicode':
-			#print "myvar is unicode!"
 			novo = unicodedata.normalize('NFKD', file).encode('ascii','ignore')
 			c = (searchSubtitlesToIDSubtitle(videoSize(novo), hashFile(novo),LanguageChoosen))
-			#print "C:",c
-			d = (searchSubtitlesToImdbId(videoSize(file), hashFile(file)))
-			#print "D:",d
-			e = (get_informations(videoSize(file), hashFile(file), LanguageChoosen))
-			print "\n\n\Informações",e
 		elif type(file).__name__ == 'str':
-			#print "myvar is a string!"
 			dir_act = os.getcwd()
 			os.chdir(dir_act)
 			c = (searchSubtitlesToIDSubtitle(videoSize(file), hashFile(file),LanguageChoosen))
-			print "C:",c
+
+		if c is None:
+			print "Não Conseguimos arranjar legenda para:" + novo
+		else:
 			d = (searchSubtitlesToImdbId(videoSize(file), hashFile(file)))
-			print "D:",d
 			e = (get_informations(videoSize(file), hashFile(file), LanguageChoosen))
-			print "\n\n\n\n\n\n\n Informações\n\n\n\n\n",e 
+			NomeParaPasta = e[2]
+			#Manage ao nome vindo da API para criar a pasta com o nome da Serie-> '"Breaking Bad" Mas'
+			getAspa = e[3]
+			aspa2 = getAspa.find('"',1)
+			firstCheck = getAspa[1:aspa2]
 			
-		#download da legenda para o ficheiro
-		x = downloadSubtitle(c)
-		#get para obter a codificação
-		enconde = x.get('data')
-		#manage à codificação e ao ficheiro html
-		manageSubtitleDownloaded(enconde,file,e)
-		array.append(enconde)
+			#NumeroEpisodio
+			thirdCheck = e[0]
+
+			#Ver se é filme ou um episódio de uma série
+			typeOfVideo = getTypeOfVideo(d)
+			if typeOfVideo == 'movie' or typeOfVideo == 'game':
+				#download da legenda para o ficheiro
+				x = downloadSubtitle(c)
+				#get para obter a codificação
+				enconde = x.get('data')
+				#manage à codificação e ao ficheiro html
+				manageSubtitleDownloaded(enconde,novo,e)
+				array.append(enconde)
+
+			elif typeOfVideo == 'episode':
+				#pasta inicial das series
+				chk = my_path + '/SeriesFromMyProgram'
+				#criar pasta Series
+				if not (os.path.exists(chk)):
+					os.makedirs(chk)
+				toMove = diretoria_Actual + "/"+ file				
+				#checkar se a série já lá existe
+				chk2 = chk +"/"+firstCheck
+				#Pasta com nome da série + pasta "Temporadas"
+				if not(os.path.exists(chk2)):
+					os.makedirs(chk2)
+				chk3 = chk2 + "/" + "Temporada " + str(NomeParaPasta)
+				if not(os.path.exists(chk3)):
+					os.makedirs(chk3)
+				chk4 = chk3 + "/" +"Episodio "+ str(thirdCheck)
+				if not(os.path.exists(chk4)):
+					os.makedirs(chk4)
+				shutil.move(toMove,chk4)
+
+				x = downloadSubtitle(c)
+				#get para obter a codificação
+				enconde = x.get('data')
+				#manage à codificação e ao ficheiro html
+				os.chdir(chk4)
+				manageSubtitleDownloaded(enconde,novo,e)
+				os.chdir(diretoria_Actual)
+				array.append(enconde)
+			
+
+
+
+		
 	return array
+#Perguntar à api do Imdb se é filme ou série por causa das organizações
+def getTypeOfVideo(ImdbIdOpenSubtitles):
+	ImdbApiArray = []
+	urlApiImdb = 'http://www.omdbapi.com/'
+	
+	#manage Imdb id to this api
+	filled = str(ImdbIdOpenSubtitles).zfill(7)
+	toSend = 'tt'+filled
+
+	parameters = {'i': toSend, 'plot': 'short', 'r': 'json'}
+	r = requests.get(urlApiImdb,params = parameters)
+	a = r.json()
+	tipo = unicodedata.normalize('NFKD', a.get('Type')).encode('ascii','ignore')
+	return tipo
+
 
 def downloadSubtitle(idLegenda):
 	data = opens.download_subtitles([idLegenda])
-	#print data[0]
 	# data [0 ] e data [1] tem a mesma coisa
 	return data[0]
 
@@ -227,7 +267,6 @@ def manageSubtitleDownloaded(SubtitleStringEncoded, NomeDoFilme,ListaWithInforma
 	fl.write(decompressed_data)
 	fl.close()
 	actual = os.getcwd()
-	print actual
 	os.remove(actual + '/' + NomeDoFilme + '.txt')
 	
 	create = actual + '/'+ leg
@@ -242,107 +281,108 @@ def manageSubtitleDownloaded(SubtitleStringEncoded, NomeDoFilme,ListaWithInforma
 	#Criar pasta e mexer para lá os ficheiros
 		
 
-# Get the sub id to download
+# Get o id da legenda par download
 def searchSubtitlesToIDSubtitle(size, videoHash,LanguageChoosen):
 	while True:
 		try:
 			data = opens.search_subtitles([{'sublanguageid': LanguageChoosen, 'moviehash': videoHash, 'moviebytesize': size}])
-			#print "\n\nDados:\n\n",data[0]
-			id_sub = int(data[0].get('IDSubtitleFile'))
-			print "ID da legenda", id_sub
-			return id_sub
+			if not isinstance(data,bool):
+				id_sub = int(data[0].get('IDSubtitleFile'))
+				return id_sub
+			else:
+				break
+			
 		except OverflowError:
 			print "Legenda não encontrada na Base de Dados"
 			return -1
 		
-# Get the imdb id do ficheiro
+# Get o imdb id do ficheiro
 def searchSubtitlesToImdbId(size, videoHash):
-	#data = opens.search_subtitles([{'sublanguageid': Language, 'moviehash': videoHash, 'moviebytesize': size}])
-	#data = opens.search_subtitles([{'query': 'South Park', 'season': 1, 'episode': 1,'sublanguageid': 'por'}])
-	data = opens.search_subtitles([{'moviehash': videoHash, 'moviebytesize': size}])
-	#print "ola"
-	#print data[0]
-	imdb_id = int(data[0].get('IDMovieImdb'))
-	#id_sub = int(data[0].get('IDSubtitleFile'))
-	assert type(imdb_id) == int
-	print "Imdb ID:",imdb_id
-	return imdb_id
-#get all the others Informations
+	while True:
+		try:
+			data = opens.search_subtitles([{'moviehash': videoHash, 'moviebytesize': size}])
+			if not isinstance(data,bool):
+				imdb_id = int(data[0].get('IDMovieImdb'))
+				assert type(imdb_id) == int
+				return imdb_id
+			else:
+				break
+		except OverflowError:
+			print "Legenda não encontrada nãoa base de dados"
+#get as outras Informacoes
 def get_informations(size,videoHash,LanguageChoosen):
 	retorno = []
 	while True:
 		try:
 			data = opens.search_subtitles([{'sublanguageid': LanguageChoosen, 'moviehash': videoHash, 'moviebytesize': size}])
-			
-			serieEpisode = int(data[0].get('SeriesEpisode'))
-			tuplo = ('SeriesEpisode',serieEpisode)
-			retorno.append(serieEpisode)
-			
-			ImdbRating = float(data[0].get('MovieImdbRating'))
-			tuplo1 = ('MovieImdbRating',ImdbRating)
-			ImdbRating1 =round(ImdbRating,2)
-			retorno.append(ImdbRating1)
-			
-			serieSeason = int(data[0].get('SeriesSeason'))
-			tuplo2 = ('SeriesSeason',serieSeason)
-			retorno.append(serieSeason)
-			
-			AnotherNomeOrigin = (data[0].get('MovieName'))
-			tuplo4 = ('MovieName',AnotherNomeOrigin)
-			retorno.append(AnotherNomeOrigin)
-			
-			idDoSiteImdb = int(data[0].get('IDMovieImdb'))
-			tuplo5 = ('IDMovieImdb',idDoSiteImdb)
-			retorno.append(idDoSiteImdb)
-			
-			AnoFilme = int(data[0].get('MovieYear'))
-			tuplo6 = ('MovieYear',AnoFilme)
-			retorno.append(AnoFilme)
+			if not isinstance(data,bool):
+				serieEpisode = int(data[0].get('SeriesEpisode'))
+				tuplo = ('SeriesEpisode',serieEpisode)
+				retorno.append(serieEpisode)
+				
+				ImdbRating = float(data[0].get('MovieImdbRating'))
+				tuplo1 = ('MovieImdbRating',ImdbRating)
+				ImdbRating1 =round(ImdbRating,2)
+				retorno.append(ImdbRating1)
+				
+				serieSeason = int(data[0].get('SeriesSeason'))
+				tuplo2 = ('SeriesSeason',serieSeason)
+				retorno.append(serieSeason)
+				
+				AnotherNomeOrigin = (data[0].get('MovieName'))
+				tuplo4 = ('MovieName',AnotherNomeOrigin)
+				retorno.append(AnotherNomeOrigin)
+				
+				idDoSiteImdb = int(data[0].get('IDMovieImdb'))
+				tuplo5 = ('IDMovieImdb',idDoSiteImdb)
+				retorno.append(idDoSiteImdb)
+				
+				AnoFilme = int(data[0].get('MovieYear'))
+				tuplo6 = ('MovieYear',AnoFilme)
+				retorno.append(AnoFilme)
 
-			return retorno
+				return retorno
+			else:
+				break
 		except OverflowError:
 			print "Legenda não encontrada na Base de Dados"
 			return -1
-			
+#criar o html e o css respetivo
 def createFileHtml(ListaWithInformationForOneFile,DiretoriaComPastaFilme):
 	n = 0
-	print "Create Html:",DiretoriaComPastaFilme 
 	serieEpisode = 'Serie Episode:'
 	imdbRating = 'Imdb Rating:'
 	serieSeason = 'Serie Season'
 	nameMovie = 'Movie :'
 	movieYear = 'Movie Year:'
 	#EpisodioDaSerie
-	a = ListaWithInformationForOneFile[n]
+	es = ListaWithInformationForOneFile[n]
 	#ImdbRating
-	b = ListaWithInformationForOneFile[n+1]
-	b1 = ("{:.1f}".format(b))
-	print "TIPO:",b1
-	print type(b1)
-	#Imagem Do poster do filme
+	ir = ListaWithInformationForOneFile[n+1]
+	#pequena Conversao
+	ir1 = ("{:.1f}".format(ir))
 	#TemporadaDaSerie
-	c = ListaWithInformationForOneFile[n+2]
-	#NomeFilme/Episodio da Série
-	d = ListaWithInformationForOneFile[n+3]
+	ts = ListaWithInformationForOneFile[n+2]
+	#NomeFilme/NomeEpisodio
+	nm = ListaWithInformationForOneFile[n+3]
 	#ImdbID
-	e = ListaWithInformationForOneFile[n+4]
+	imi = ListaWithInformationForOneFile[n+4]
 	#AnoFilme / Série
-	f = ListaWithInformationForOneFile[n+5]
+	yr = ListaWithInformationForOneFile[n+5]
 
-	#os.chdir(DiretoriaComPastaFilme)
-	NomeFicheiro = d+'.html'
+	NomeFicheiro = nm+'.html'
 	fileHtml = open(os.path.join(DiretoriaComPastaFilme, NomeFicheiro), "w")
-	Inf = getImdbInfApi(e)
+	Inf = getImdbInfApi(imi)
 	#Descrição do filme
-	g = Inf[n]
+	dsc = Inf[n]
 	#Imagem Do poster do filme
-	h = Inf[n+1]
+	im = Inf[n+1]
 	#Actores Principais Do filme
-	i = Inf[n+2]
+	ap = Inf[n+2]
 	#Director
-	j = Inf[n+3]
+	dr = Inf[n+3]
 	#Prémios
-	k = Inf[n+4]
+	aw = Inf[n+4]
 
 
 	message = """<html lang = "pt">
@@ -354,7 +394,9 @@ def createFileHtml(ListaWithInformationForOneFile,DiretoriaComPastaFilme):
 	<body>
 		
 		<div id="header">
-			<h1>%s</h1>
+			<div itemscope itemtype="http://schema.org/Movie">
+				<h1 itemprop="name">%s</h1>
+			</div>
 		</div>
 
 		<div id ="desc">
@@ -386,7 +428,7 @@ def createFileHtml(ListaWithInformationForOneFile,DiretoriaComPastaFilme):
 		  	
 
 	</body>
-	</html>"""%(d,g,j,i,c,a,b1,f,k,e,h)
+	</html>"""%(nm,dsc,dr,ap,ts,es,ir1,yr,aw,imi,im)
 	fileHtml.write(message)
 	fileHtml.close()
 
@@ -436,26 +478,18 @@ def createFileHtml(ListaWithInformationForOneFile,DiretoriaComPastaFilme):
 	
 
 def getImdbInfApi(ImdbId):
-	#http://www.omdbapi.com/?i=tt0099423&plot=short&r=json
 	ImdbApiArray = []
 	urlApiImdb = 'http://www.omdbapi.com/'
 	
 	#manage Imdb id to this api
 	filled = str(ImdbId).zfill(7)
-	print filled
 	toSend = 'tt'+filled
-	print toSend
 
 	parameters = {'i': toSend, 'plot': 'short', 'r': 'json'}
-	#url = urlApiImdb.format(urllib.urlencode(params))
-	#req = urllib2.Request(url)
+
 	r = requests.get(urlApiImdb,params = parameters)
-	print (r.url)
 	sleep(1)
 	a = r.json()
-	print a
-	#inPyth = json.loads(r.json)
-	#print inPyth
 	descr = unicodedata.normalize('NFKD', a.get('Plot')).encode('ascii','ignore')
 	imagem = unicodedata.normalize('NFKD', a.get('Poster')).encode('ascii','ignore')
 	actores = unicodedata.normalize('NFKD', a.get('Actors')).encode('ascii','ignore')
@@ -466,26 +500,7 @@ def getImdbInfApi(ImdbId):
 	ImdbApiArray.append(actores)
 	ImdbApiArray.append(director)
 	ImdbApiArray.append(premios)
-	print "Result:",ImdbApiArray
 	return ImdbApiArray
-	'''
-	try:
-		response = urllib2.urlopen(req)
-	except HTTPError,e:
-		print 'The server couldn\'t fulfill the request.'
-		print 'Error code: ',e.code, 'Not Found'
-		return 0
-	
-	else:
-		print response.info()
-		print response.content()'''
-
-
-
-
-
-	
-
 
 
 def main(argv):
@@ -494,6 +509,7 @@ def main(argv):
 		sys.exit(1)
 	else:
 		first()
+		global my_path
 		my_path = getMyPath()
 		print my_path
 		linguagem = read_languages()
@@ -501,14 +517,11 @@ def main(argv):
 		#check_language(linguagens)
 		#languages_choosen = raw_input("I want subtitles in :")
 
-		print "\nLista de filmes sem legenda:\n"
 		x = get_all_files(my_path)
 		print "Pasta base lista filmes sem legenda:",x
-		print "diretorias matches iniciais:",diretorias_down
 		createArraySubtitlesId(x,linguagem,my_path)
 		#print "array",novo
 		do_recursive_downloads()
-		#now_download_for_all_folders_down(diretorias_down,linguagem)
 
 
 if __name__ == "__main__":
